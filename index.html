@@ -91,11 +91,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── FOOTER ── */
 .footer-note{text-align:center;font-size:12px;color:var(--muted);margin-top:28px}
 
-/* ── RESET BTN ── */
-.top-actions{display:flex;justify-content:flex-end;margin-bottom:12px;gap:10px}
+/* ── ACTIONS & SYNC ── */
+.top-actions{display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
 .action-btn{font-size:12px;color:var(--muted);background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:6px 14px;cursor:pointer;transition:background 0.15s}
 .action-btn:hover{background:#eee}
 .action-btn.green{color:var(--green-dark);border-color:var(--done-border);background:var(--done-bg)}
+.action-btn.primary{color:#fff;border-color:var(--green);background:var(--green);font-weight:600}
+.action-btn.primary:hover{background:#35b56e}
+.sync-pill{font-size:11px;padding:5px 12px;border-radius:20px;background:var(--done-bg);color:var(--green-dark);border:1px solid var(--done-border);display:none;align-items:center;gap:5px;white-space:nowrap}
+.sync-pill.show{display:flex}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
 
 @media(max-width:680px){.grid{grid-template-columns:1fr}.header{padding:20px}.header-stats{gap:10px}.stat-pill{padding:8px 12px;min-width:60px}.stat-pill .val{font-size:20px}}
 </style>
@@ -108,6 +113,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="action-btn" onclick="expandAll()">Expand all</button>
   <button class="action-btn green" onclick="exportStatus()">Export status</button>
   <button class="action-btn" onclick="resetAll()">Reset to defaults</button>
+  <button class="action-btn primary" onclick="copyLink()">🔗 Copy shareable link</button>
+  <div class="sync-pill" id="sync-pill"><div class="sync-dot"></div> Link copied!</div>
 </div>
 
 <div class="header">
@@ -139,7 +146,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <div class="grid" id="folder-grid"></div>
 
-<div class="footer-note">Click any task to cycle its status: not started → in progress → completed. Progress is saved automatically.</div>
+<div class="footer-note">Click any task to cycle status · Progress saves in this browser automatically · Use <strong>Copy shareable link</strong> to open your exact progress on any device or browser</div>
 </div>
 
 <script>
@@ -371,6 +378,18 @@ const FOLDERS = [
 const STORAGE_KEY = 'fm_dashboard_v2';
 
 function loadState() {
+  // 1. Try URL hash first (cross-device, persistent link)
+  try {
+    const hash = window.location.hash;
+    if (hash && hash.startsWith('#state=')) {
+      const encoded = hash.slice(7);
+      const parsed = JSON.parse(atob(encoded));
+      // Also write to localStorage so it sticks on future visits without hash
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed)); } catch(e) {}
+      return parsed;
+    }
+  } catch(e) {}
+  // 2. Fall back to localStorage
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -378,7 +397,24 @@ function loadState() {
 }
 
 function saveState(state) {
+  // Write to localStorage
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+  // Write to URL hash so copying the URL preserves state on any device
+  try {
+    const encoded = btoa(JSON.stringify(state));
+    history.replaceState(null, '', '#state=' + encoded);
+  } catch(e) {}
+}
+
+function copyLink() {
+  const url = window.location.href;
+  navigator.clipboard.writeText(url).then(() => {
+    const pill = document.getElementById('sync-pill');
+    pill.classList.add('show');
+    setTimeout(() => pill.classList.remove('show'), 3000);
+  }).catch(() => {
+    prompt('Copy this link to save your progress anywhere:', url);
+  });
 }
 
 let taskState = loadState();
@@ -538,7 +574,8 @@ function collapseAll() {
 function resetAll() {
   if (confirm('Reset all task statuses to defaults? This cannot be undone.')) {
     taskState = {};
-    saveState(taskState);
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+    try { history.replaceState(null, '', window.location.pathname); } catch(e) {}
     renderAll();
   }
 }
